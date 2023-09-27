@@ -11,13 +11,78 @@ pub struct Z {}
 impl Sealed for Z {}
 impl Num for Z {}
 
-pub struct I<N: Num = Z>(PhantomData<N>);
+pub struct I<N: Num = Z>(Box<N>, PhantomData<N>);
 impl<N: Num> Sealed for I<N> {}
 impl<N: Num> Num for I<N> {}
 
-pub struct O<N: Num = Z>(PhantomData<N>);
+pub struct O<N: Num = Z>(Box<N>, PhantomData<N>);
 impl<N: Num> Sealed for O<N> {}
 impl<N: Num> Num for O<N> {}
+
+pub trait SNum<N: Num>: Sealed {}
+
+pub struct SZ {}
+impl Sealed for SZ {}
+impl SNum<Z> for SZ {}
+
+pub struct SI<'a, N: Num + 'a = Z>(Box<dyn SNum<N> + 'a>);
+impl<'a, N: Num + 'a> Sealed for SI<'a, N> {}
+impl<'a, N: Num + 'a> SNum<I<N>> for SI<'a, N> {}
+
+pub struct SO<'a, N: Num + 'a = Z>(Box<dyn SNum<N> + 'a>);
+impl<'a, N: Num + 'a> Sealed for SO<'a, N> {}
+impl<'a, N: Num + 'a> SNum<O<N>> for SO<'a, N> {}
+
+pub trait SNumFromNum<N: Num, SN: SNum<N>> {
+    fn fromnum(n: N) -> SN;
+}
+impl SNumFromNum<Z, SZ> for SZ {
+    fn fromnum(_: Z) -> SZ {
+        SZ {}
+    }
+}
+impl<'a> SNumFromNum<I<Z>, SI<'a, Z>> for SI<'a, Z> {
+    fn fromnum(I(n, _): I<Z>) -> SI<'a, Z> {
+        SI(Box::new(<SZ>::fromnum(*n)))
+    }
+}
+impl<'a> SNumFromNum<O<Z>, SO<'a, Z>> for SO<'a, Z> {
+    fn fromnum(O(n, _): O<Z>) -> SO<'a, Z> {
+        SO(Box::new(<SZ>::fromnum(*n)))
+    }
+}
+impl<'a, N: Num + 'a> SNumFromNum<I<I<N>>, SI<'a, I<N>>> for SI<'a, I<N>>
+where
+    SI<'a, N>: SNumFromNum<I<N>, SI<'a, N>>,
+{
+    fn fromnum(I(n, _): I<I<N>>) -> SI<'a, I<N>> {
+        SI(Box::new(<SI<N>>::fromnum(*n)))
+    }
+}
+impl<'a, N: Num + 'a> SNumFromNum<I<O<N>>, SI<'a, O<N>>> for SI<'a, O<N>>
+where
+    SO<'a, N>: SNumFromNum<O<N>, SO<'a, N>>,
+{
+    fn fromnum(I(n, _): I<O<N>>) -> SI<'a, O<N>> {
+        SI(Box::new(<SO<N>>::fromnum(*n)))
+    }
+}
+impl<'a, N: Num + 'a> SNumFromNum<O<I<N>>, SO<'a, I<N>>> for SO<'a, I<N>>
+where
+    SI<'a, N>: SNumFromNum<I<N>, SI<'a, N>>,
+{
+    fn fromnum(O(n, _): O<I<N>>) -> SO<'a, I<N>> {
+        SO(Box::new(<SI<N>>::fromnum(*n)))
+    }
+}
+impl<'a, N: Num + 'a> SNumFromNum<O<O<N>>, SO<'a, O<N>>> for SO<'a, O<N>>
+where
+    SO<'a, N>: SNumFromNum<O<N>, SO<'a, N>>,
+{
+    fn fromnum(O(n, _): O<O<N>>) -> SO<'a, O<N>> {
+        SO(Box::new(<SO<N>>::fromnum(*n)))
+    }
+}
 
 trait ReifyNum: Num {
     fn reify(u: usize) -> usize;
